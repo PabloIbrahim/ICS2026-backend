@@ -1,0 +1,40 @@
+
+name: CI-CD Backend
+
+on:
+  push:
+    branches:
+      - development
+      - main
+  pull_request:
+    branches:
+      - development
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Instalar .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restaurar dependencias
+        run: dotnet restore Dsw2025Tpi.sln
+
+      - name: Compilación limpia
+        run: dotnet build Dsw2025Tpi.sln --configuration Release --no-restore
+
+      - name: Ejecutar pruebas
+        run: dotnet test Dsw2025Tpi.sln --configuration Release --no-build
+
+      - name: Construir imagen Docker
+        run: docker build -t ics2026-backend:${{ github.sha }} .
