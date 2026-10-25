@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -22,6 +22,13 @@
   <ItemGroup>
     <ProjectReference Include="..\Dsw2025Tpi.Application\Dsw2025Tpi.Application.csproj" />
     <ProjectReference Include="..\Dsw2025Tpi.Data\Dsw2025Tpi.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="admins.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

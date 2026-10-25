@@ -38,7 +38,9 @@ namespace Dsw2025Tpi.Application.Services
                 issuer: jwtConfig["Issuer"],
                 audience: jwtConfig["Audience"],
                 claims: claims,
-                expires: DateTime.Now.AddMinutes(double.Parse(jwtConfig["ExpireInMinutes"] ?? "60")),
+                expires: DateTime.UtcNow.AddMinutes(
+                    double.Parse(jwtConfig["ExpiresInMinutes"] ?? "60")
+                ),
                 signingCredentials: creds
                 );
 
