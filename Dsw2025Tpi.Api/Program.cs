@@ -12,7 +12,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Dsw2025Tpi.Api;
@@ -23,15 +22,15 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // Configuración de logging
-
+        // Configuración de la conexión a la base de datos
         var connectionString = builder.Configuration["DB_CONNECTION_STRING"]
             ?? builder.Configuration.GetConnectionString("Dsw2025TpiEntities")
             ?? builder.Configuration.GetConnectionString("DB_CONNECTION_STRING")
             ?? throw new InvalidOperationException(
                 "No se configuró la connection string. Definí la app setting 'DB_CONNECTION_STRING' o 'ConnectionStrings__Dsw2025TpiEntities'.");
 
-        if (!OperatingSystem.IsWindows() && connectionString.Contains("(localdb)", StringComparison.OrdinalIgnoreCase))
+        if (!OperatingSystem.IsWindows() &&
+            connectionString.Contains("(localdb)", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 "La connection string apunta a LocalDB, que no está disponible en este sistema. " +
@@ -40,11 +39,12 @@ public class Program
 
         var serverPart = connectionString
             .Split(';')
-            .FirstOrDefault(x => x.TrimStart().StartsWith("Server=", StringComparison.OrdinalIgnoreCase)
-                              || x.TrimStart().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(x =>
+                x.TrimStart().StartsWith("Server=", StringComparison.OrdinalIgnoreCase) ||
+                x.TrimStart().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase));
+
         Console.WriteLine($"Conectando a base de datos: {serverPart}");
 
-        // Add services to the container.
         builder.Services.AddLogging(config =>
         {
             config.ClearProviders();
@@ -59,8 +59,7 @@ public class Program
 
         builder.Services.AddControllers().AddJsonOptions(opt =>
         {
-            opt.JsonSerializerOptions.Converters.Add(
-                new JsonStringEnumConverter());
+            opt.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         });
 
         builder.Services.AddEndpointsApiExplorer();
@@ -128,7 +127,6 @@ public class Program
         {
             options.DefaultAuthenticateScheme =
                 JwtBearerDefaults.AuthenticationScheme;
-
             options.DefaultChallengeScheme =
                 JwtBearerDefaults.AuthenticationScheme;
         })
@@ -140,28 +138,25 @@ public class Program
                 ValidateAudience = true,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
-
                 ValidIssuer = jwtConfig["Issuer"],
                 ValidAudience = jwtConfig["Audience"],
-
                 IssuerSigningKey = new SymmetricSecurityKey(key),
-
                 ClockSkew = TimeSpan.Zero
             };
 
             options.Events = new JwtBearerEvents
             {
-		OnAuthenticationFailed = context =>
-		{
-		    var logger = context.HttpContext.RequestServices
-                    .GetRequiredService<ILogger<Program>>();
-			 logger.LogWarning(
-		        "Falló la validación de un token JWT. Tipo de excepción: {ExceptionType}",
-		        context.Exception.GetType().Name
-		    );
+                OnAuthenticationFailed = context =>
+                {
+                    var logger = context.HttpContext.RequestServices
+                        .GetRequiredService<ILogger<Program>>();
 
-		    return Task.CompletedTask;
-		}
+                    logger.LogWarning(
+                        "Falló la validación de un token JWT. Tipo de excepción: {ExceptionType}",
+                        context.Exception.GetType().Name);
+
+                    return Task.CompletedTask;
+                }
             };
         });
 
@@ -190,7 +185,7 @@ public class Program
 
         var app = builder.Build();
 
-        // Crear roles y cargar administradores desde admins.json
+        // Crear roles y configurar el administrador inicial
         using (var scope = app.Services.CreateScope())
         {
             var services = scope.ServiceProvider;
@@ -206,26 +201,19 @@ public class Program
 
                 var userManager = services.GetRequiredService<UserManager<IdentityUser>>();
                 var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
-                var roleManager =
-                    services.GetRequiredService<RoleManager<IdentityRole>>();
 
-                // 1. Crear los roles necesarios y comprobar resultados
                 foreach (var roleName in new[] { "Admin", "User" })
                 {
                     if (!await roleManager.RoleExistsAsync(roleName))
                     {
-                        var roleResult =
-                            await roleManager.CreateAsync(
-                                new IdentityRole(roleName));
+                        var roleResult = await roleManager.CreateAsync(
+                            new IdentityRole(roleName));
 
                         if (!roleResult.Succeeded)
                         {
                             throw new InvalidOperationException(
                                 $"No se pudo crear el rol {roleName}: " +
-                                string.Join(
-                                    "; ",
-                                    roleResult.Errors.Select(
-                                        e => e.Description)));
+                                string.Join("; ", roleResult.Errors.Select(e => e.Description)));
                         }
 
                         logger.LogInformation(
@@ -234,117 +222,77 @@ public class Program
                     }
                 }
 
-                // 2. Localizar el archivo admins.json
-                string jsonFilePath = Path.Combine(
-                    AppContext.BaseDirectory,
-                    "admins.json");
+                // Crear el administrador inicial desde la configuración segura
+                var adminUsername = builder.Configuration["BootstrapAdmin:Username"];
+                var adminEmail = builder.Configuration["BootstrapAdmin:Email"];
+                var adminPassword = builder.Configuration["BootstrapAdmin:Password"];
 
-                logger.LogInformation(
-                    "Buscando admins.json en {Path}. Existe: {Exists}",
-                    jsonFilePath,
-                    File.Exists(jsonFilePath));
-
-                if (!File.Exists(jsonFilePath))
+                if (string.IsNullOrWhiteSpace(adminUsername) ||
+                    string.IsNullOrWhiteSpace(adminEmail) ||
+                    string.IsNullOrWhiteSpace(adminPassword))
                 {
-                    throw new FileNotFoundException(
-                        "No se encontró admins.json.",
-                        jsonFilePath);
+                    logger.LogWarning(
+                        "No se configuró BootstrapAdmin completo. Se omite la creación del administrador inicial.");
                 }
-
-                string json = await File.ReadAllTextAsync(jsonFilePath);
-
-                var admins = JsonSerializer.Deserialize<List<AdminUser>>(
-                    json,
-                    new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-
-                if (admins == null || admins.Count == 0)
+                else
                 {
-                    throw new InvalidOperationException(
-                        "admins.json no contiene administradores válidos.");
-                }
-
-                // 3. Crear los administradores y asignar el rol Admin
-                foreach (var adminData in admins)
-                {
-                    if (string.IsNullOrWhiteSpace(adminData.Username) ||
-                        string.IsNullOrWhiteSpace(adminData.Email) ||
-                        string.IsNullOrWhiteSpace(adminData.Password))
-                    {
-                        logger.LogError(
-                            "Hay un administrador con campos obligatorios vacíos.");
-
-                        continue;
-                    }
-
-                    var adminUser =
-                        await userManager.FindByNameAsync(
-                            adminData.Username);
+                    var adminUser = await userManager.FindByNameAsync(adminUsername);
 
                     if (adminUser == null)
                     {
                         adminUser = new IdentityUser
                         {
-                            UserName = adminData.Username,
-                            Email = adminData.Email,
+                            UserName = adminUsername,
+                            Email = adminEmail,
                             EmailConfirmed = true
                         };
 
-                        var createResult =
-                            await userManager.CreateAsync(
-                                adminUser,
-                                adminData.Password);
+                        var createResult = await userManager.CreateAsync(
+                            adminUser,
+                            adminPassword);
 
                         if (!createResult.Succeeded)
                         {
                             logger.LogError(
-                                "No se pudo crear el administrador {Username}: {Errors}",
-                                adminData.Username,
-                                string.Join(
-                                    "; ",
-                                    createResult.Errors.Select(
-                                        e => e.Description)));
-
-                            continue;
+                                "No se pudo crear el administrador inicial {Username}: {Errors}",
+                                adminUsername,
+                                string.Join("; ", createResult.Errors.Select(e => e.Description)));
                         }
-
-                        logger.LogInformation(
-                            "Administrador {Username} creado correctamente.",
-                            adminData.Username);
+                        else
+                        {
+                            logger.LogInformation(
+                                "Administrador inicial {Username} creado correctamente.",
+                                adminUsername);
+                        }
                     }
                     else
                     {
                         logger.LogInformation(
-                            "El administrador {Username} ya existe.",
-                            adminData.Username);
+                            "El administrador inicial {Username} ya existe.",
+                            adminUsername);
                     }
 
-                    if (!await userManager.IsInRoleAsync(
-                        adminUser,
-                        "Admin"))
-                    {
-                        var roleResult =
-                            await userManager.AddToRoleAsync(
-                                adminUser,
-                                "Admin");
+                    adminUser = await userManager.FindByNameAsync(adminUsername);
 
-                        if (!roleResult.Succeeded)
+                    if (adminUser != null &&
+                        !await userManager.IsInRoleAsync(adminUser, "Admin"))
+                    {
+                        var assignRoleResult = await userManager.AddToRoleAsync(
+                            adminUser,
+                            "Admin");
+
+                        if (!assignRoleResult.Succeeded)
                         {
                             logger.LogError(
                                 "No se pudo asignar el rol Admin a {Username}: {Errors}",
-                                adminData.Username,
-                                string.Join(
-                                    "; ",
-                                    roleResult.Errors.Select(
-                                        e => e.Description)));
+                                adminUsername,
+                                string.Join("; ", assignRoleResult.Errors.Select(e => e.Description)));
                         }
                         else
                         {
                             logger.LogInformation(
                                 "Rol Admin asignado a {Username}.",
-                                adminData.Username);
+                                adminUsername);
                         }
                     }
                 }
@@ -356,14 +304,11 @@ public class Program
                     "Falló la inicialización de roles y administradores.");
             }
 
-            // 4. Cargar clientes de manera independiente
+            // Cargar clientes de manera independiente
             try
             {
-                var context =
-                    services.GetRequiredService<Dsw2025TpiContext>();
-
+                var context = services.GetRequiredService<Dsw2025TpiContext>();
                 context.Seedwork<Customer>("customers.json");
-            }
             }
             catch (Exception ex)
             {
@@ -372,7 +317,8 @@ public class Program
                     "Falló la carga inicial de clientes.");
             }
         }
-               // Configuración del pipeline HTTP
+
+        // Configuración del pipeline HTTP
         if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();
@@ -381,14 +327,11 @@ public class Program
         }
 
         app.UseCors("AllowFrontend");
-
         app.UseMiddleware<ExceptionHandlingMiddleware>();
-
         app.UseAuthentication();
         app.UseAuthorization();
 
         app.MapControllers();
-
         app.MapHealthChecks("/healthcheck");
 
         app.Run();
