@@ -24,6 +24,27 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
 
         // Configuración de logging
+
+        var connectionString = builder.Configuration["DB_CONNECTION_STRING"]
+            ?? builder.Configuration.GetConnectionString("Dsw2025TpiEntities")
+            ?? builder.Configuration.GetConnectionString("DB_CONNECTION_STRING")
+            ?? throw new InvalidOperationException(
+                "No se configuró la connection string. Definí la app setting 'DB_CONNECTION_STRING' o 'ConnectionStrings__Dsw2025TpiEntities'.");
+
+        if (!OperatingSystem.IsWindows() && connectionString.Contains("(localdb)", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "La connection string apunta a LocalDB, que no está disponible en este sistema. " +
+                "Configurá en el App Service una app setting 'DB_CONNECTION_STRING' con la cadena ADO.NET de tu SQL de Azure.");
+        }
+
+        var serverPart = connectionString
+            .Split(';')
+            .FirstOrDefault(x => x.TrimStart().StartsWith("Server=", StringComparison.OrdinalIgnoreCase)
+                              || x.TrimStart().StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase));
+        Console.WriteLine($"Conectando a base de datos: {serverPart}");
+
+        // Add services to the container.
         builder.Services.AddLogging(config =>
         {
             config.ClearProviders();
@@ -82,9 +103,7 @@ public class Program
 
         builder.Services.AddDbContext<AuthenticateContext>(options =>
         {
-            options.UseSqlServer(
-                builder.Configuration.GetConnectionString(
-                    "Dsw2025TpiEntities"));
+            options.UseSqlServer(connectionString);
         });
 
         // Configuración de ASP.NET Identity
@@ -148,9 +167,7 @@ public class Program
 
         builder.Services.AddDbContext<Dsw2025TpiContext>(options =>
         {
-            options.UseSqlServer(
-                builder.Configuration.GetConnectionString(
-                    "Dsw2025TpiEntities"));
+            options.UseSqlServer(connectionString);
         });
 
         builder.Services.AddSingleton<JwtTokenService>();
@@ -181,9 +198,14 @@ public class Program
 
             try
             {
-                var userManager =
-                    services.GetRequiredService<UserManager<IdentityUser>>();
+                var authContext = services.GetRequiredService<AuthenticateContext>();
+                authContext.Database.Migrate();
 
+                var context = services.GetRequiredService<Dsw2025TpiContext>();
+                context.Database.Migrate();
+
+                var userManager = services.GetRequiredService<UserManager<IdentityUser>>();
+                var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
                 var roleManager =
                     services.GetRequiredService<RoleManager<IdentityRole>>();
 
@@ -342,6 +364,7 @@ public class Program
 
                 context.Seedwork<Customer>("customers.json");
             }
+            }
             catch (Exception ex)
             {
                 logger.LogError(
@@ -349,15 +372,14 @@ public class Program
                     "Falló la carga inicial de clientes.");
             }
         }
-
-        // Configuración del pipeline HTTP
+               // Configuración del pipeline HTTP
         if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();
             app.UseSwaggerUI();
+            app.UseHttpsRedirection();
         }
 
-        app.UseHttpsRedirection();
         app.UseCors("AllowFrontend");
 
         app.UseMiddleware<ExceptionHandlingMiddleware>();

@@ -2,7 +2,8 @@
 **/obj/
 **/.vs/
 **/.vscode/
-.git/
-.github/
 **/*.user
 **/*.suo
+**/.DS_Store
+.git/
+.github/
