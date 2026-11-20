@@ -6,35 +6,96 @@ on:
     branches:
       - development
       - main
+
   pull_request:
     branches:
       - development
       - main
 
+  workflow_dispatch:
+
 permissions:
   contents: read
 
+env:
+  DOTNET_VERSION: '8.0.x'
+  AZURE_WEBAPP_NAME: ics2026-backend-api-pi
+
 jobs:
-  build-and-test:
+
+  # 1. Compilación y ejecución de pruebas
+  tests:
+    name: Build and Test
     runs-on: ubuntu-latest
 
     steps:
       - name: Descargar código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Instalar .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restaurar dependencias
         run: dotnet restore Dsw2025Tpi.sln
 
-      - name: Compilación limpia
+      - name: Compilar solución
         run: dotnet build Dsw2025Tpi.sln --configuration Release --no-restore
 
-      - name: Ejecutar pruebas
+      - name: Ejecutar pruebas unitarias y de integración
         run: dotnet test Dsw2025Tpi.sln --configuration Release --no-build
+
+  # 2. Construcción de imagen Docker
+  docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: tests
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Construir imagen Docker
         run: docker build -t ics2026-backend:${{ github.sha }} .
+
+  # 3. Publicación en Azure
+  deploy:
+    name: Deploy to Azure
+    runs-on: ubuntu-latest
+    needs: docker
+
+    if: github.ref == 'refs/heads/development' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Instalar .NET 8
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restaurar dependencias
+        run: dotnet restore Dsw2025Tpi.sln
+
+      - name: Publicar API
+        run: dotnet publish Dsw2025Tpi.Api/Dsw2025Tpi.Api.csproj --configuration Release --output ./publish
+
+      - name: Iniciar sesión en Azure
+        uses: azure/login@2035af27c2cea8ff426397d10e3edb28906b51df
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Desplegar en Azure Web App
+        uses: azure/webapps-deploy@84a80cfe7e9889f35148ed88c307e6e93bf02578
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: Production
+          package: ./publish
