@@ -18,6 +18,7 @@ RUN dotnet restore "Dsw2025Tpi.Api/Dsw2025Tpi.Api.csproj"
 
 COPY . .
 WORKDIR /src/Dsw2025Tpi.Api
+
 RUN dotnet publish "Dsw2025Tpi.Api.csproj" \
     --configuration Release \
     --output /app/publish \
@@ -27,4 +28,8 @@ RUN dotnet publish "Dsw2025Tpi.Api.csproj" \
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
+
+# Ejecutar la aplicación sin privilegios de administrador
+USER app
+
 ENTRYPOINT ["dotnet", "Dsw2025Tpi.Api.dll"]
