@@ -1,0 +1,26 @@
+
+# Git
+.git
+.github
+.gitignore
+
+# IDEs
+.vs
+.vscode
+.idea
+
+# Archivos del sistema
+**/.DS_Store
+
+# Compilación .NET
+**/bin/
+**/obj/
+
+# Pruebas
+**/TestResults/
+TestResults/
+
+# Archivos locales
+**/*.user
+**/*.suo
+**/*.cache
