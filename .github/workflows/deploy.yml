@@ -58,7 +58,7 @@ jobs:
         run: dotnet restore Dsw2025Tpi.sln
 
       - name: Autenticar con SonarQube Cloud para iniciar el analisis
-        uses: SonarSource/sonarqube-auth-action@v1.2
+        uses: SonarSource/sonarqube-auth-action@b372e2c2930aadfcc4f4399446da1e12772709ad # v1.2
         id: sonar-auth
 
       - name: Iniciar analisis SonarQube
@@ -81,7 +81,7 @@ jobs:
             -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
       - name: Renovar autenticacion con SonarQube Cloud para finalizar
-        uses: SonarSource/sonarqube-auth-action@v1.2
+        uses: SonarSource/sonarqube-auth-action@b372e2c2930aadfcc4f4399446da1e12772709ad # v1.2
         id: sonar-auth-end
 
       - name: Finalizar analisis SonarQube
